@@ -6,4 +6,5 @@ enum NavigationLabel: string
 {
     case Users = 'User Management';
     case Posts = 'Posts';
+    case Page = 'Pages';
 }
