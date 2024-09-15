@@ -1,0 +1,121 @@
+services:
+  fg-cms-app:
+    profiles: ["main"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        uid: ${UID}
+    image: fg-cms-app:latest
+    container_name: fg-cms-app-container
+    volumes:
+      - ./:/var/www/html:delegated
+      - ./docker-configs/php.ini:/usr/local/etc/php/php.ini:ro
+    ports:
+      - 8001:80
+      - 5173:5173 #Vite Port
+    depends_on:
+      - fg-cms-mariadb
+      - fg-cms-redis-server
+
+  fg-cms-redis-server:
+    profiles: ["main"]
+    image: "redis:alpine"
+    command: redis-server
+    container_name: fg-cms-redis-server-container
+    ports:
+      - "6379:6379"
+
+  fg-cms-mariadb:
+    profiles: ["main"]
+    image: mariadb:11.2.2
+    container_name: fg-cms-mariadb
+    command:
+      [
+        '--default-time-zone=+00:00',
+        '--default-authentication-plugin=mysql_native_password'
+      ]
+    ports:
+      - 3307:3306
+    environment:
+      - MARIADB_ROOT_PASSWORD=root
+    volumes:
+      - fg-cms-mariadb-data:/var/lib/mysql
+
+  fg-cms-phpmyadmin:
+    profiles: ["main"]
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: fg-cms-phpmyadmin
+    environment:
+      - PMA_HOST=fg-cms-mariadb
+      - PMA_USER=root
+      - PMA_PASSWORD=root
+      - UPLOAD_LIMIT=120M
+    ports:
+      - "8002:80"
+    depends_on:
+      - fg-cms-mariadb
+
+  fg-cms-sonarqube-postgres:
+    profiles: ["sonarqube"]
+    image: postgres:15.3
+    container_name: fg-cms-sonarqube-postgres-container
+    restart: always
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - sonarqube-postgres-data:/var/lib/postgresql/data
+
+  fg-cms-sonarqube-adminer:
+    profiles: ["sonarqube"]
+    image: adminer:latest
+    container_name: fg-cms-sonarqube-adminer
+    restart: always
+    ports:
+      - 8003:8080
+    depends_on:
+      - fg-cms-sonarqube-postgres
+
+  fg-cms-sonarqube:
+    profiles: ["sonarqube"]
+    image: sonarqube:10.1.0-community
+    container_name: fg-cms-sonarqube-container
+    environment:
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      SONAR_JDBC_USERNAME: postgres
+      SONAR_JDBC_PASSWORD: postgres
+      SONAR_JDBC_URL: jdbc:postgresql://fg-cms-sonarqube-postgres:5432/sonar
+    ports:
+      - 9000:9000
+    links:
+      - fg-cms-sonarqube-postgres
+    volumes:
+      - sonarqube-data:/opt/sonarqube/data
+      - sonarqube-logs:/opt/sonarqube/logs
+      - sonarqube-extensions:/opt/sonarqube/extensions
+    depends_on:
+      - fg-cms-sonarqube-postgres
+
+  fg-cms-sonarqube-scanner:
+    profiles: ["sonarqube"]
+    image: sonarsource/sonar-scanner-cli:latest
+    container_name: fg-cms-sonarqube-scanner-container
+    environment:
+      SONAR_HOST_URL: "http://fg-cms-sonarqube:9000"
+      SONAR_SCANNER_OPTS: "-Dsonar.projectKey=${SONARQUBE_PROJECT_KEY}"
+      SONAR_TOKEN: ${SONARQUBE_PROJECT_TOKEN}
+    volumes:
+      - ./:/usr/src
+    links:
+      - fg-cms-sonarqube
+    depends_on:
+      - fg-cms-sonarqube
+
+volumes:
+  fg-cms-mariadb-data:
+  sonarqube-data:
+  sonarqube-logs:
+  sonarqube-extensions:
+  sonarqube-postgres-data:
